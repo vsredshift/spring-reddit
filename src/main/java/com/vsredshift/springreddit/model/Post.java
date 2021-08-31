@@ -34,15 +34,18 @@ public class Post {
 
     @Nullable @Lob
     private String description;
+
     private Integer voteCount;
+
     @ManyToOne(fetch = LAZY)
     @JoinColumn(name = "userId", referencedColumnName = "userId")
     @ToString.Exclude
     private User user;
 
     private Instant createdDate;
+
     @ManyToOne(fetch = LAZY)
-    @JoinColumn(name = "id", referencedColumnName = "id")
+    @JoinColumn(name = "subreddit", referencedColumnName = "id")
     @ToString.Exclude
     private Subreddit subreddit;
 
