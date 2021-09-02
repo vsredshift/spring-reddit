@@ -2,6 +2,7 @@ package com.vsredshift.springreddit.service;
 
 import com.vsredshift.springreddit.dto.AuthenticationResponse;
 import com.vsredshift.springreddit.dto.LoginRequest;
+import com.vsredshift.springreddit.dto.RefreshTokenRequest;
 import com.vsredshift.springreddit.dto.RegisterRequest;
 import com.vsredshift.springreddit.exception.SpringRedditException;
 import com.vsredshift.springreddit.model.NotificationEmail;
@@ -12,6 +13,7 @@ import com.vsredshift.springreddit.repository.VerificationTokenRepository;
 import com.vsredshift.springreddit.security.JwtProvider;
 import lombok.AllArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -30,15 +32,17 @@ import static java.time.Instant.now;
 @Service
 @AllArgsConstructor
 @Slf4j
+@Transactional
 public class AuthService {
 
-    private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
-    private final VerificationTokenRepository verificationTokenRepository;
-    private final MailContentBuilder mailContentBuilder;
-    private final MailService mailService;
     private final AuthenticationManager authenticationManager;
     private final JwtProvider jwtProvider;
+    private final UserRepository userRepository;
+    private final VerificationTokenRepository verificationTokenRepository;
+    private final RefreshTokenService refreshTokenService;
+    private final MailContentBuilder mailContentBuilder;
+    private final MailService mailService;
 
     @Transactional
     public void signup(RegisterRequest registerRequest) {
@@ -95,7 +99,23 @@ public class AuthService {
         );
         SecurityContextHolder.getContext().setAuthentication(authentication);
         String authenticationToken = jwtProvider.generateToken(authentication);
-        return new AuthenticationResponse(authenticationToken, loginRequest.getUsername());
+        return AuthenticationResponse.builder()
+                .authenticationToken(authenticationToken)
+                .expiresAt(now().plusMillis(jwtProvider.jwtExpirationInMillis()))
+                .refreshToken(refreshTokenService.generateRefreshToken().getToken())
+                .username(loginRequest.getUsername())
+                .build();
+    }
+
+    public AuthenticationResponse refreshToken(RefreshTokenRequest refreshTokenRequest) {
+        refreshTokenService.validateRefreshToken(refreshTokenRequest.getRefreshToken());
+        String token = jwtProvider.generateTokenWithUserName(refreshTokenRequest.getUsername());
+        return AuthenticationResponse.builder()
+                .authenticationToken(token)
+                .expiresAt(now().plusMillis(jwtProvider.jwtExpirationInMillis()))
+                .refreshToken(refreshTokenRequest.getRefreshToken())
+                .username(refreshTokenRequest.getUsername())
+                .build();
     }
 
     @Transactional(readOnly = true)
@@ -108,5 +128,10 @@ public class AuthService {
                 .orElseThrow(() -> new UsernameNotFoundException(
                         "User with username " + principal.getUsername() + " not found"
                 ));
+    }
+
+    public boolean isLoggedIn() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        return !(authentication instanceof AnonymousAuthenticationToken) && authentication.isAuthenticated();
     }
 }
